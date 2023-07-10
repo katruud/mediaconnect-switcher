@@ -4,7 +4,9 @@
 
 ## Purpose
 This is a work-in-progress proof of concept for an AWS [MediaConnect](https://aws.amazon.com/mediaconnect/) based solution to integrate live streams from any MediaConnect supported AWS region over the AWS global network and into a single live and preview stream. The benefit of this over using a single ingest is that regional ingests can be created to match physical location of content, and modern protocols for ingest can be used, such as [SRT](https://www.haivision.com/blog/all/rtmp-vs-srt/). This reduces the chance for data loss or additional latency traveling the public internet.
+
 While [MediaLive](https://aws.amazon.com/medialive/) is an obvious choice for selecting between MediaConnect streams due to built-in functionality for this, it has limited support for multiple inputs (2 push inputs), and it adds a transcoding step. Any transcoding done to a stream will diminish the quality slightly, and two inputs is limiting (though more inputs are supported as pull). 
+
 One solution to this problem is to directly switch between MediaConnect streams using a single output stream. Without reencoding, this results in a brief distortion to the stream between keyframes:
 
 
