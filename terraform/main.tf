@@ -1,343 +1,174 @@
-## https://medium.com/swlh/creating-an-aws-ecs-cluster-of-ec2-instances-with-terraform-85a10b5cfbe3
-## https://engineering.finleap.com/posts/2020-02-20-ecs-fargate-terraform/
+data "aws_caller_identity" "current" {}
 
-######### DATA SOURcES #########
-
-data "aws_region" "current" {}
-
-data "aws_vpc" "media_dev" {
-  id = var.vpc_id
-}
-
+# Parse json file
 locals {
-  raw_data       = jsondecode(file("taskdefinition.json"))
-  container_name = local.raw_data[0].name
+  # Get json
+  json = jsondecode(file("../vars/mediaconnect.json"))
+
+  # Get variables
+  vpc_cidr            = { for region in local.json.regions : region.region => region.vpc_cidr }
+  private_subnet_cidr = { for region in local.json.regions : region.region => region.private_subnet_cidr }
+  flows               = { for region in local.json.regions : region.region => region.flows }
 }
 
-######### ECR REPOSITORY #########
-
-resource "aws_ecr_repository" "flask-webapp" {
-  name = "flask-webapp"
+resource "aws_iam_role" "mediaconnect" {
+  name               = "mediaconnect-role"
+  path               = "/mediaconnect/"
+  assume_role_policy = data.aws_iam_policy_document.mediaconnect-assume-role-policy.json
 }
 
-resource "aws_ecr_lifecycle_policy" "flask-webapp" {
-  repository = aws_ecr_repository.flask-webapp.name
-
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "keep last 10 images"
-      action = {
-        type = "expire"
-      }
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = 10
-      }
-    }]
-  })
-}
-
-########## ECS SERVICE ##########
-
-resource "aws_ecs_cluster" "cluster" {
-  name = "ecs-cluster"
-}
-
-resource "aws_ecs_task_definition" "service" {
-  family                   = "service"
-  requires_compatibilities = ["EC2"]
-  network_mode             = "bridge"
-  cpu                      = 768
-  memory                   = 768
-  container_definitions    = file("taskdefinition.json")
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
-  runtime_platform {
-    operating_system_family = "LINUX"
-    cpu_architecture        = "ARM64"
-  }
-}
-
-resource "aws_ecs_service" "flask_webapp" {
-  name            = "flask-webapp"
-  cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.service.arn
-  desired_count   = 1
-
-  lifecycle {
-    ignore_changes = [task_definition, desired_count]
-  }
-}
-
-resource "aws_ecs_cluster_capacity_providers" "ecs" {
-  cluster_name = aws_ecs_cluster.cluster.name
-}
-
-resource "aws_appautoscaling_target" "ecs_target" {
-  max_capacity       = 1
-  min_capacity       = 0
-  resource_id        = "service/${aws_ecs_cluster.cluster.name}/${aws_ecs_service.flask_webapp.name}"
-  scalable_dimension = "ecs:service:DesiredCount"
-  service_namespace  = "ecs"
-}
-
-resource "aws_ecs_capacity_provider" "ec2" {
-  name = "capacity-provider-ec2"
-
-  auto_scaling_group_provider {
-    auto_scaling_group_arn = aws_autoscaling_group.ecs_asg.arn
-  }
-}
-
-resource "aws_cloudwatch_log_group" "flask_webapp" {
-  name = "awslogs-nginx-ecs"
-}
-resource "aws_iam_openid_connect_provider" "github_actions" {
-  url = "https://token.actions.githubusercontent.com"
-
-  client_id_list = [
-    "sts.amazonaws.com",
-  ]
-
-  thumbprint_list = [var.thumbprint]
-}
-
-data "aws_iam_policy_document" "github_actions" {
+data "aws_iam_policy_document" "mediaconnect-assume-role-policy" {
   statement {
     sid     = ""
     effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    condition {
-      test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = [var.github_repo]
-    }
+    actions = ["sts:AssumeRole"]
 
     condition {
       test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
+      variable = "aws:SourceAccount"
+      values   = ["${data.aws_caller_identity.current.account_id}"]
     }
 
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:mediaconnect:*:${data.aws_caller_identity.current.account_id}:flow:*"]
     }
-  }
-}
-
-########## IAM ##########
-
-resource "aws_iam_role" "github_actions" {
-  name               = "github_actions"
-  assume_role_policy = data.aws_iam_policy_document.github_actions.json
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_role" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonECS_FullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "ec2_role" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-}
-
-resource "aws_iam_role" "ecs_task_execution_role" {
-  name               = "ecs_task_role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_role.json
-}
-
-data "aws_iam_policy_document" "ecs_task_execution_role" {
-  statement {
-    sid     = ""
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
 
     principals {
       type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
+      identifiers = ["mediaconnect.amazonaws.com"]
     }
   }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+resource "aws_iam_role_policy_attachment" "mediaconnect-attach" {
+  role       = aws_iam_role.mediaconnect.name
+  policy_arn = aws_iam_policy.mediaconnect-policy.arn
 }
 
-resource "aws_iam_role" "ecs_task" {
-  name               = "ecs_task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task.json
+resource "aws_iam_policy" "mediaconnect-policy" {
+  name        = "mediaconnect-policy"
+  description = "VPC access for mediaconnect"
+  policy      = data.aws_iam_policy_document.mediaconnect-policy.json
 }
 
-data "aws_iam_policy_document" "ecs_task" {
+data "aws_iam_policy_document" "mediaconnect-policy" {
   statement {
-    sid     = ""
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    sid       = ""
+    effect    = "Allow"
+    resources = ["*"]
 
-    principals {
-      type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
-    }
+    actions = [
+      "ec2:describeNetworkInterfaces",
+      "ec2:describeSecurityGroups",
+      "ec2:describeSubnets",
+      "ec2:createNetworkInterface",
+      "ec2:createNetworkInterfacePermission",
+      "ec2:deleteNetworkInterface",
+      "ec2:deleteNetworkInterfacePermission",
+    ]
   }
 }
 
-# EC2 IAM
+resource "aws_iam_role_policy_attachment" "mediaconnect-secrets-policy" {
+  role       = aws_iam_role.mediaconnect.name
+  policy_arn = aws_iam_policy.mediaconnect-secrets-policy.arn
+}
 
-data "aws_iam_policy_document" "ecs_agent" {
+resource "aws_iam_policy" "mediaconnect-secrets-policy" {
+  name        = "mediaconnect-secrets-policy"
+  description = "Secrets manager for mediaconnect"
+  policy      = data.aws_iam_policy_document.mediaconnect-secrets-policy.json
+}
+
+data "aws_iam_policy_document" "mediaconnect-secrets-policy" {
   statement {
-    actions = ["sts:AssumeRole"]
+    sid       = ""
+    effect    = "Allow"
+    resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:srt-password*"]
 
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
+    actions = [
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:ListSecretVersionIds",
+    ]
   }
 }
 
-resource "aws_iam_role" "ecs_agent" {
-  name               = "ecs_agent"
-  assume_role_policy = data.aws_iam_policy_document.ecs_agent.json
+# us-east-2 module
+module "mediaconnect-useast2" {
+  source              = "./mediaconnect"
+  private_subnet_cidr = local.private_subnet_cidr["us-east-2"]
+  hub_subnet_cidr     = local.private_subnet_cidr["us-east-2"]
+  vpc_cidr            = local.vpc_cidr["us-east-2"]
+  mediaconnect_role   = aws_iam_role.mediaconnect.arn
+  flows               = local.flows["us-east-2"]
+  vpc_peer            = null
+  spoke_region        = false
+
+  providers = {
+    aws = aws.us-east-2
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_agent" {
-  role       = aws_iam_role.ecs_agent.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+# eu-west-2 module
+module "mediaconnect-euwest2" {
+  source              = "./mediaconnect"
+  private_subnet_cidr = local.private_subnet_cidr["eu-west-2"]
+  hub_subnet_cidr     = local.private_subnet_cidr["us-east-2"]
+  vpc_cidr            = local.vpc_cidr["eu-west-2"]
+  mediaconnect_role   = aws_iam_role.mediaconnect.arn
+  vpc_peer            = aws_vpc_peering_connection.euwest2.id
+  flows               = local.flows["us-east-2"]
+  spoke_region        = true
+
+  providers = {
+    aws = aws.eu-west-2
+  }
 }
 
-resource "aws_iam_instance_profile" "ecs_agent" {
-  name = "ecs_agent"
-  role = aws_iam_role.ecs_agent.name
+# Accept peering connection from spokes and create routes
+
+# Accept peering connection from eu-west-2
+resource "aws_vpc_peering_connection" "euwest2" {
+  vpc_id      = module.mediaconnect-useast2.vpc_id
+  peer_vpc_id = module.mediaconnect-euwest2.vpc_id
+  peer_region = "eu-west-2"
+  auto_accept = false
+
+  tags = {
+    Side = "Requester"
+  }
 }
 
-########## NETWORKING ##########
-
-resource "aws_internet_gateway" "internet_gateway" {
-  vpc_id = data.aws_vpc.media_dev.id
-}
-
-resource "aws_subnet" "public_subnet" {
-  vpc_id     = data.aws_vpc.media_dev.id
-  cidr_block = var.public_subnet_cidr
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = data.aws_vpc.media_dev.id
+resource "aws_route_table" "euwest2" {
+  vpc_id = module.mediaconnect-useast2.vpc_id
 
   route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.internet_gateway.id
+    cidr_block                = local.private_subnet_cidr["eu-west-2"]
+    vpc_peering_connection_id = aws_vpc_peering_connection.euwest2.id
   }
 }
 
-resource "aws_route_table_association" "route_table_association" {
-  subnet_id      = aws_subnet.public_subnet.id
-  route_table_id = aws_route_table.public.id
+resource "aws_route_table_association" "euwest2" {
+  subnet_id      = module.mediaconnect-useast2.private_subnet_id
+  route_table_id = aws_route_table.euwest2.id
 }
 
-resource "aws_security_group" "ecs_sg" {
-  vpc_id      = data.aws_vpc.media_dev.id
-  name = "ecs_security_group"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# Set password for SRT
+resource "aws_secretsmanager_secret" "srt-password" {
+  name = "srt-password"
 }
 
-########## EC2 ##########
-
-data "aws_ami" "amazon-linux-2023-ECS" {
-  most_recent = true
-  filter {
-    name   = "architecture"
-    values = ["arm64"]
-  }
-
-  filter {
-    name   = "owner-alias"
-    values = ["amazon"]
-  }
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-ecs-hvm-2023*"]
-  }
+resource "random_password" "password" {
+  length           = 12
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-resource "aws_launch_template" "ecs_launch" {
-  name = "ecs_launch"
-
-  iam_instance_profile {
-    arn = aws_iam_instance_profile.ecs_agent.arn
-  }
-
-  image_id = data.aws_ami.amazon-linux-2023-ECS.id
-
-  instance_type = "t4g.small"
-
-  network_interfaces {
-    network_interface_id = aws_network_interface.public_ip.id
-  }
-
-
-  user_data = filebase64("${path.module}/userdata.sh")
-
-  tag_specifications {
-    resource_type = "instance"
-
-    tags = {
-      Name = "ecs_instance"
-    }
-  }
-}
-
-resource "aws_network_interface" "public_ip" {
-  subnet_id       = aws_subnet.public_subnet.id
-  security_groups = [aws_security_group.ecs_sg.id]
-}
-
-resource "aws_eip" "public_ip" {
-  network_interface = aws_network_interface.public_ip.id
-}
-
-resource "aws_autoscaling_group" "ecs_asg" {
-  name               = "ecs_asg"
-  availability_zones = ["us-east-2a"]
-  desired_capacity    = 1
-  max_size            = 1
-  min_size            = 1
-
-  launch_template {
-    id      = aws_launch_template.ecs_launch.id
-    version = "$Latest"
-  }
-}
-
-########## ROUTE53 ##########
-
-data "aws_route53_zone" "primary" {
-  name = "${var.domain}"
-}
-
-resource "aws_route53_record" "www" {
-  zone_id = data.aws_route53_zone.primary.zone_id
-  name    = "${var.subdomain}.${var.domain}"
-  type    = "A"
-  ttl     = 60
-  records = [aws_eip.public_ip.public_ip]
+resource "aws_secretsmanager_secret_version" "srt-password" {
+  secret_id     = aws_secretsmanager_secret.srt-password.id
+  secret_string = random_password.password.result
 }

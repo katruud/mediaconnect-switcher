@@ -1,23 +1,40 @@
-output "ECR_REPOSITORY" {
-  value = aws_ecr_repository.flask-webapp.name
+output "private_subnet_id1" {
+  value = module.mediaconnect-useast2.private_subnet_id
 }
 
-output "AWS_REGION" {
-  value = data.aws_region.current
+output "vpc_id1" {
+  value = module.mediaconnect-useast2.vpc_id
 }
 
-output "ECS_SERVICE" {
-  value = aws_ecs_service.flask_webapp.name
+output "security_group1" {
+  value = module.mediaconnect-useast2.security_group
 }
 
-output "ECS_CLUSTER" {
-  value = aws_ecs_cluster.cluster.name
+output "flow_arns1" {
+  value = module.mediaconnect-useast2.flow_arns
 }
 
-output "ECS_TASK_DEFINITION" {
-  value = aws_ecs_task_definition.service.arn_without_revision
+output "private_subnet_id2" {
+  value = module.mediaconnect-euwest2.private_subnet_id
 }
 
-output "CONTAINER_NAME" {
-  value = local.container_name
+output "vpc_id2" {
+  value = module.mediaconnect-euwest2.vpc_id
+}
+
+output "security_group2" {
+  value = module.mediaconnect-euwest2.security_group
+}
+
+output "flow_arns2" {
+  value = module.mediaconnect-euwest2.flow_arns
+}
+
+output "role_arn" {
+  value = aws_iam_role.mediaconnect.arn
+}
+
+output "srt_password" {
+  value     = aws_secretsmanager_secret_version.srt-password.secret_string
+  sensitive = true
 }

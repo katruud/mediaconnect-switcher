@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'MediaConnect Flow'
+
+Parameters:
+  FlowName:
+    Description: Name of MediaConnect flow
+    Type: String
+    Default: TestFlow
+  Subnet:
+    Description: Subnet of VPC output
+    Type: String
+  Role:
+    Description: Role of VPC output
+    Type: String
+  SecurityGroup:
+    Description: Security group of VPC output
+    Type: String
+  Az:
+    Description: Az of VPC output
+    Type: String
+
+Resources:
+  MediaConectFlow:
+    Type: AWS::MediaConnect::Flow
+    Properties: 
+      Name: !Ref FlowName
+      AvailabilityZone: 
+        Ref: Az
+      Source: 
+        IngestPort: 2000
+        MinLatency: 100
+        Name: IngestFlow
+        Protocol: srt-listener
+        WhitelistCidr: 0.0.0.0/0
+
+  MediaConnectOutput:
+    Type: AWS::MediaConnect::FlowOutput
+    Properties: 
+      CidrAllowList: 
+      - 0.0.0.0/0
+      Description: Output-Flow
+      FlowArn: !Ref MediaConectFlow
+      MinLatency: 100
+      Name: OutputFlow
+      Port: 2002
+      Protocol: srt-listener
+
+Outputs:
+  flowarn:
+    Description: Mediaconnect flow ARN
+    Value: !Ref MediaConectFlow
+
+  outputarn:
+    Description: Mediaconnect flow output ARN
+    Value: !Ref MediaConnectOutput
+
+  inputarn:
+    Description: Mediaconnect flow input ARN
+    Value: !GetAtt MediaConectFlow.Source.SourceArn
+    
+
