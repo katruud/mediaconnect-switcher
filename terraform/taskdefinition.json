@@ -1,0 +1,24 @@
+[
+  {
+    "name": "flask-webapp",
+    "portMappings": [
+      {
+        "hostport" : 80,
+        "containerPort": 8000,
+        "protocol": "tcp"
+      }
+    ],
+    "essential": true,
+    "environment": [],
+    "mountPoints": [],
+    "volumesFrom": [],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "awslogs-nginx-ecs",
+        "awslogs-region": "us-east-2",
+        "awslogs-stream-prefix": "ecs"
+      }
+    }
+  }
+]
