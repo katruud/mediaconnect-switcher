@@ -1,0 +1,108 @@
+{
+    "regions": [
+        {
+            "region": "us-east-2",
+            "provider": "aws.us-east-2",
+            "vpc_cidr": "10.0.0.0/16",
+            "private_subnet_cidr": "10.0.0.0/24",
+            "flows": [
+                {
+                    "name": "flow1",
+                    "inputs": [
+                        {
+                            "name": "input",
+                            "type": "public",
+                            "port": 2000
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "output",
+                            "type": "public",
+                            "port": 2002
+                        },
+                        {
+                            "name": "output2",
+                            "type": "private",
+                            "port": 2004
+                        }
+                    ]
+                },
+                {
+                    "name": "flow2",
+                    "inputs": [
+                        {
+                            "name": "input",
+                            "type": "public",
+                            "port": 2000
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "output1",
+                            "type": "public",
+                            "port": 2002
+                        },
+                        {
+                            "name": "output2",
+                            "type": "private",
+                            "port": 2004
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "region": "eu-west-2",
+            "provider": "aws.eu-west-2",
+            "vpc_cidr": "10.1.0.0/16",
+            "private_subnet_cidr": "10.1.0.0/24",
+            "flows": [
+                {
+                    "name": "flow1",
+                    "inputs": [
+                        {
+                            "name": "input",
+                            "type": "public",
+                            "port": 2000
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "output1",
+                            "type": "public",
+                            "port": 2002
+                        },
+                        {
+                            "name": "output2",
+                            "type": "private",
+                            "port": 2004
+                        }
+                    ]
+                },
+                {
+                    "name": "flow2",
+                    "inputs": [
+                        {
+                            "name": "input",
+                            "type": "public",
+                            "port": 2000
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "output",
+                            "type": "public",
+                            "port": 2002
+                        },
+                        {
+                            "name": "output2",
+                            "type": "private",
+                            "port": 2004
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
